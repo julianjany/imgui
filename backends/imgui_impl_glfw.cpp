@@ -107,6 +107,9 @@
 #include <emscripten/html5.h>
 #endif
 
+#include <vector>
+#include <filesystem>
+
 // We gather version tests as define in order to easily see which features are version-dependent.
 #define GLFW_VERSION_COMBINED           (GLFW_VERSION_MAJOR * 1000 + GLFW_VERSION_MINOR * 100 + GLFW_VERSION_REVISION)
 #define GLFW_HAS_WINDOW_TOPMOST         (GLFW_VERSION_COMBINED >= 3200) // 3.2+ GLFW_FLOATING
@@ -169,6 +172,7 @@ struct ImGui_ImplGlfw_Data
     GLFWkeyfun              PrevUserCallbackKey;
     GLFWcharfun             PrevUserCallbackChar;
     GLFWmonitorfun          PrevUserCallbackMonitor;
+    GLFWdropfun             PrevUserCallbackDrop;
 #ifdef _WIN32
     WNDPROC                 PrevWndProc;
 #endif
@@ -517,6 +521,36 @@ static EM_BOOL ImGui_ImplEmscripten_WheelCallback(int, const EmscriptenWheelEven
 static LRESULT CALLBACK ImGui_ImplGlfw_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #endif
 
+static std::vector<std::filesystem::path>* copy_paths(int count, const char** paths)
+{
+    IM_ASSERT(count > 0);
+    IM_ASSERT(paths != nullptr);
+
+    auto* p_paths{new std::vector<std::filesystem::path>{}};
+
+    // copy data
+    for (int i{0}; i < count; ++i)
+    {
+        p_paths->emplace_back(paths[i]);
+    }
+
+    return p_paths;
+}
+
+static void ImGui_ImplGlfw_DropCallback(GLFWwindow*, int count, const char** paths)
+{
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceExtern |
+                                   ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+        // HINT: only pointer to 'drop_paths' is set as payload;
+        //       the user has to free the memory allocated for the buffer
+        auto* p_paths = copy_paths(count, paths);
+        if (p_paths != nullptr) {
+            ImGui::SetDragDropPayload("drop_paths", &p_paths, sizeof(char**));
+        }
+        ImGui::EndDragDropSource();
+    }
+}
+
 void ImGui_ImplGlfw_InstallCallbacks(GLFWwindow* window)
 {
     ImGui_ImplGlfw_Data* bd = ImGui_ImplGlfw_GetBackendData();
@@ -531,6 +565,7 @@ void ImGui_ImplGlfw_InstallCallbacks(GLFWwindow* window)
     bd->PrevUserCallbackKey = glfwSetKeyCallback(window, ImGui_ImplGlfw_KeyCallback);
     bd->PrevUserCallbackChar = glfwSetCharCallback(window, ImGui_ImplGlfw_CharCallback);
     bd->PrevUserCallbackMonitor = glfwSetMonitorCallback(ImGui_ImplGlfw_MonitorCallback);
+    bd->PrevUserCallbackDrop = glfwSetDropCallback(window, ImGui_ImplGlfw_DropCallback);
     bd->InstalledCallbacks = true;
 }
 
@@ -1069,6 +1104,7 @@ static void ImGui_ImplGlfw_CreateWindow(ImGuiViewport* viewport)
     glfwSetWindowCloseCallback(vd->Window, ImGui_ImplGlfw_WindowCloseCallback);
     glfwSetWindowPosCallback(vd->Window, ImGui_ImplGlfw_WindowPosCallback);
     glfwSetWindowSizeCallback(vd->Window, ImGui_ImplGlfw_WindowSizeCallback);
+    glfwSetDropCallback(vd->Window, ImGui_ImplGlfw_DropCallback);
     if (bd->ClientApi == GlfwClientApi_OpenGL)
     {
         glfwMakeContextCurrent(vd->Window);
